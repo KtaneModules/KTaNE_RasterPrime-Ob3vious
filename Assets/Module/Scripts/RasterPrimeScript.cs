@@ -38,6 +38,8 @@ public class RasterPrimeScript : MonoBehaviour
 
     private bool _focused = false;
 
+    private Thread _thread = null;
+
     void Awake()
     {
         _moduleId = _moduleIdCounter++;
@@ -67,56 +69,38 @@ public class RasterPrimeScript : MonoBehaviour
             _rightButton.Selectable.OnInteract();
     }
 
+    void OnDestroy()
+    {
+        if (_thread != null)
+        {
+            _thread.Interrupt();
+            _isUsingThreads = false;
+        }
+    }
+
     private static bool _isUsingThreads = false;
     private IEnumerator LoadPuzzle(SysRnd random)
     {
         //Wait an extra frame so TwitchPlaysActive can be set in TestHarness
         yield return null;
 
-        KMSelectable moduleSelectable = GetComponent<KMSelectable>();
-
-        if (!TwitchPlaysActive)
-        {
-            moduleSelectable.OnFocus = () =>
-            {
-                _focused = true;
-                if (_ready)
-                {
-                    _leftButton.Enable();
-                    _rightButton.Enable();
-                }
-            };
-            moduleSelectable.OnDefocus = () =>
-            {
-                _focused = false;
-                if (_ready)
-                {
-                    _leftButton.Disable();
-                    _rightButton.Disable();
-                }
-            };
-        }
-        else
-        {
-            Debug.Log("TP is active");
-            _focused = true;
-        }
-
         Vector3 buttonScale = _leftButton.transform.localScale;
         _leftButton.transform.localScale *= 0.0001f;
 
-        yield return new WaitForSecondsRealtime(UnityRnd.Range(0, 3f));
+        yield return new WaitForSecondsRealtime(UnityRnd.Range(1f, 4f));
 
         //threads needed here
 
         yield return new WaitWhile(() => _isUsingThreads);
         _isUsingThreads = true;
-        new Thread(() =>
+        _thread = new Thread(() =>
         {
             _puzzle = RasterPuzzle.GeneratePuzzle(random);
-        }).Start();
+        });
+        _thread.Start();
         yield return new WaitWhile(() => _puzzle == null);
         _isUsingThreads = false;
+        _thread = null;
 
         //thread is done here
 
@@ -145,11 +129,41 @@ public class RasterPrimeScript : MonoBehaviour
             _audio.PlaySoundAtTransform("ButtonPress", _rightButton.transform);
             StartCoroutine(_rightButton.InteractionAnimation(new Vector3(-3, 3)));
         };
-        if (_focused)
+        if (_focused || TwitchPlaysActive)
         {
             _leftButton.Enable();
             _rightButton.Enable();
         }
+
+        KMSelectable moduleSelectable = GetComponent<KMSelectable>();
+
+        if (!TwitchPlaysActive)
+        {
+            moduleSelectable.OnFocus += () =>
+            {
+                _focused = true;
+                if (_ready)
+                {
+                    _leftButton.Enable();
+                    _rightButton.Enable();
+                }
+            };
+            moduleSelectable.OnDefocus += () =>
+            {
+                _focused = false;
+                if (_ready)
+                {
+                    _leftButton.Disable();
+                    _rightButton.Disable();
+                }
+            };
+        }
+        else
+        {
+            Debug.Log("<Raster Prime> TP is active");
+            _focused = true;
+        }
+
         moduleSelectable.Children = new KMSelectable[] { _leftButton.Selectable, _rightButton.Selectable };
         moduleSelectable.UpdateChildren();
 
@@ -223,6 +237,7 @@ public class RasterPrimeScript : MonoBehaviour
                 string substring = _inputs.Substring(i);
                 if (solution.StartsWith(substring))
                 {
+                    _focused = true;
                     char action = solution[substring.Length];
                     if (action == 'L')
                         _leftButton.Selectable.OnInteract();
